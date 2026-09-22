@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Focus Lock 2.2</title>
+<title>Focus Lock 2.3</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0f14;--panel:#141a22;--panel2:#10151c;--line:#27313d;--text:#f1f5f9;--muted:#9aa6b2;--accent:#7dd3fc;--good:#86efac;--warn:#fbbf24;--bad:#fb7185}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -24,7 +24,7 @@ input{width:100%;padding:13px;border:1px solid var(--line);border-radius:11px;ba
 <body>
 <main>
 <header class="top">
-  <div><h1>Focus Lock 2.1</h1><div class="sub">카메라 기반 집중 모니터 · 영상 저장 없음</div></div>
+  <div><h1>Focus Lock 2.3</h1><div class="sub">카메라 기반 집중 모니터 · 영상 저장 없음</div></div>
   <div class="engine" id="engine"><span class="dot"></span><span id="engineText">준비 확인 중</span></div>
 </header>
 <section class="card" style="margin-top:16px">
@@ -61,7 +61,7 @@ input{width:100%;padding:13px;border:1px solid var(--line);border-radius:11px;ba
   <div class="log" id="log"></div>
 </aside>
 </div>
-<section class="card setup" style="margin-top:14px"><b>자동 판정 기준</b><br>• <b>자리 이탈:</b> 얼굴이 약 2.5초 이상 감지되지 않으면 자동 일시정지하고, 돌아오면 약 0.9초 확인 후 자동 재개합니다.<br>• <b>졸음 의심:</b> 카메라를 켤 때 <b>개인별 눈 크기</b>를 보정한 뒤, 양쪽 눈이 기준보다 크게 닫힌 상태가 약 2초 지속될 때만 판정합니다. 판정 즉시 자동 일시정지합니다.<br>• <b>고개 돌림:</b> 얼굴 방향이 약 2.5초 크게 벗어나면 자동 일시정지하고, 정면으로 돌아오면 자동 재개합니다.<br>• 자동 일시정지 중에는 <b>순공시간이 증가하지 않습니다.</b> 짧은 깜빡임과 순간적인 움직임은 무시합니다.</section>
+<section class="card setup" style="margin-top:14px"><b>자동 판정 기준</b><br>• <b>자리 이탈:</b> 얼굴이 약 2.5초 이상 감지되지 않으면 자동 일시정지하고, 돌아오면 약 0.9초 확인 후 자동 재개합니다.<br>• <b>졸음 의심:</b> 카메라를 켤 때 <b>개인별 눈 크기</b>를 보정한 뒤, 고개를 숙여도 양쪽 눈이 개인 기준의 약 72% 이하로 닫힌 상태가 약 1.6초 지속될 때 판정합니다. 판정 즉시 자동 일시정지합니다.<br>• <b>고개 돌림:</b> 얼굴 방향이 약 2.5초 크게 벗어나면 자동 일시정지하고, 정면으로 돌아오면 자동 재개합니다.<br>• 자동 일시정지 중에는 <b>순공시간이 증가하지 않습니다.</b> 짧은 깜빡임과 순간적인 움직임은 무시합니다.</section>
 <section class="card setup" id="errorBox" style="margin-top:14px"><b>실행 문제 해결</b><br>1. iPad라면 이 파일을 '파일 앱에서 직접 열기'보다 <b>웹페이지 주소(HTTPS)</b>로 여는 방식을 권장합니다.<br>2. 카메라 권한을 거부했다면 브라우저의 사이트 설정에서 카메라 권한을 허용하세요.<br>3. AI 엔진은 처음 한 번 모델을 내려받기 때문에 인터넷 연결이 필요합니다.<br>4. 이 페이지를 <b>HTTP가 아닌 HTTPS 또는 localhost</b>에서 실행해야 카메라 접근이 가능합니다.</section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.js" crossorigin="anonymous"></script>
@@ -152,19 +152,19 @@ function initAI(){
      if(e>.08&&leftEAR>.08&&rightEAR>.08)eyeSamples.push(e);
      if(now-eyeCalibrationStart>1500&&eyeSamples.length>=15){
       eyeBaseline=median(eyeSamples.slice(-60));eyeCalibrated=true;
-      statusSet("AI 준비 완료","개인 눈 크기 보정 완료 · 아주 확실한 양쪽 눈 감김만 졸음으로 판정합니다.");
+      statusSet("AI 준비 완료","개인 눈 크기 보정 완료 · 고개를 숙여도 양쪽 눈의 닫힘 비율을 추적합니다.");
      }
     }else{
      // 개인 기준 대비 52% 이하 + 절대 EAR 0.105 이하일 때만 '완전 감김'으로 본다.
-     const closedThreshold=Math.max(.085,Math.min(.14,eyeBaseline*.60));
-     // 고개를 숙이면 눈 윤곽의 EAR가 달라질 수 있어, 너무 낮은 절대값만 요구하지 않고
-     // 개인 기준 대비 닫힘 비율을 사용한다.
+     const closedThreshold=Math.max(.075,Math.min(.15,eyeBaseline*.72));
+     // 책을 보려고 고개를 숙이면 Face Mesh의 눈 세로길이가 평소보다 흔들릴 수 있다.
+     // 절대 EAR 하나만 보지 않고 개인 기준 대비 비율로 판단한다.
      clearlyClosed=leftEAR<closedThreshold&&rightEAR<closedThreshold;
      if(clearlyClosed){
       if(!eyesClosedAt)eyesClosedAt=now;
-      if(running&&!paused&&!autoPaused&&now-eyesClosedAt>2000&&!sleepLogged){
+      if(running&&!paused&&!autoPaused&&now-eyesClosedAt>1600&&!sleepLogged){
        sleepLogged=true;sleepCount++;sleepEl.textContent=sleepCount;
-       event("졸음 의심","양쪽 눈이 확실하게 약 2초 이상 감김");
+       event("졸음 의심","고개를 숙인 상태에서도 양쪽 눈이 약 1.6초 이상 닫힘");
        autoPause("sleep","졸음 의심 · 눈 감김");
       }
      }else{
