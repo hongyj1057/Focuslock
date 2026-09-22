@@ -52,27 +52,65 @@ input{width:100%;padding:13px;border:1px solid var(--line);border-radius:11px;ba
 <section class="card setup" style="margin-top:14px"><b>자동 판정 기준</b><br>• <b>자리 이탈:</b> 얼굴이 약 3초 이상 감지되지 않으면 기록합니다.<br>• <b>졸음 의심:</b> 양쪽 눈이 약 1.8초 이상 감긴 상태가 지속되면 기록합니다.<br>• <b>고개 돌림:</b> 얼굴의 좌우 방향이 크게 바뀐 상태가 약 2.5초 지속되면 '시선 이탈 의심'으로 기록합니다.<br>• 짧은 깜빡임과 순간적인 움직임은 기록하지 않습니다. 카메라 각도·조명에 따라 오탐이 발생할 수 있습니다.</section>
 <section class="card setup" id="errorBox" style="margin-top:14px"><b>실행 문제 해결</b><br>1. iPad라면 이 파일을 '파일 앱에서 직접 열기'보다 <b>웹페이지 주소(HTTPS)</b>로 여는 방식을 권장합니다.<br>2. 카메라 권한을 거부했다면 브라우저의 사이트 설정에서 카메라 권한을 허용하세요.<br>3. AI 엔진은 처음 한 번 모델을 내려받기 때문에 인터넷 연결이 필요합니다.<br>4. 이 페이지를 <b>HTTP가 아닌 HTTPS 또는 localhost</b>에서 실행해야 카메라 접근이 가능합니다.</section>
 </main>
-<script type="module">
-const engineText=document.getElementById("engineText"),engine=document.getElementById("engine"),video=document.getElementById("video"),cameraBtn=document.getElementById("camera"),testBtn=document.getElementById("test"),startBtn=document.getElementById("start"),pauseBtn=document.getElementById("pause"),endBtn=document.getElementById("end"),status=document.getElementById("status"),camText=document.getElementById("camText"),camDot=document.getElementById("camDot"),focusEl=document.getElementById("focus"),scoreEl=document.getElementById("score"),awayEl=document.getElementById("away"),sleepEl=document.getElementById("sleep"),fill=document.getElementById("fill"),log=document.getElementById("log"),goal=document.getElementById("goal");
-let FaceLandmarker,FilesetResolver,landmarker=null,stream=null,raf=0,running=false,paused=false,focusedMs=0,lastFrame=0,lastFace=0,eyesClosed=0,awayLogged=false,sleepLogged=false,turnLogged=false,awayCount=0,sleepCount=0,turnCount=0,nonFocusMs=0,lastState="대기";
-function setEngine(t,on=false){engineText.textContent=t;engine.classList.toggle("on",on)}
-function setStatus(title,desc){status.innerHTML="<b>"+title+"</b><span>"+desc+"</span>";lastState=title}
-function fmt(ms){let s=Math.floor(ms/1000),m=Math.floor(s/60);s%=60;return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")}
-function logEvent(title,detail){const time=new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});const e=document.createElement("div");e.className="event";e.innerHTML="<b>"+title+"</b> · "+detail+"<br><small>"+time+"</small>";log.prepend(e)}
-function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
-function ear(p,a){const q=a.map(i=>p[i]);return(distance(q[1],q[5])+distance(q[2],q[4]))/(2*distance(q[0],q[3]))}
-function yawApprox(p){const nose=p[1],le=p[33],re=p[263],mid=(le.x+re.x)/2;return(nose.x-mid)/Math.max(.001,Math.abs(re.x-le.x))}
-async function loadAI(){try{setEngine("AI 엔진 로딩 중…");const vision=await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm");FaceLandmarker=vision.FaceLandmarker;FilesetResolver=vision.FilesetResolver;const fs=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm");landmarker=await FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"CPU"},runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:false});setEngine("AI 준비 완료",true);if(stream){setStatus("AI 준비 완료","카메라가 켜져 있어 실시간 감지를 시작합니다.");monitor()}else setStatus("AI 준비 완료","카메라를 켜면 실시간 감지가 시작됩니다.")}catch(e){console.error(e);setEngine("AI 로딩 실패");setStatus("AI 엔진을 불러오지 못함",(e?.name||"오류")+" · "+(e?.message||"인터넷/브라우저 환경을 확인하세요."))}}
-async function startCamera(){if(!navigator.mediaDevices?.getUserMedia){setStatus("카메라 사용 불가","이 페이지가 HTTPS로 열렸는지 확인하세요. 현재 보안 상태: "+(window.isSecureContext?"안전":"안전하지 않음"));return}try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"user"},width:{ideal:640},height:{ideal:480}},audio:false});video.srcObject=stream;await video.play();camText.textContent="카메라 켜짐";camDot.style.background="var(--good)";cameraBtn.textContent="카메라 끄기";if(landmarker)monitor();else setStatus("카메라 켜짐","카메라는 작동 중입니다. AI 엔진이 준비되면 자동 감지를 시작합니다.")}catch(e){console.error(e);setStatus("카메라 오류",e.name+" · "+(e.message||"권한 또는 기기 문제"))}}
+<script>
+let faceMesh=null,stream=null,raf=0,running=false,paused=false,focusedMs=0,lastTick=0,lastFace=0,eyesClosedAt=0,awayLogged=false,sleepLogged=false,turnStarted=0,turnLogged=false,awayCount=0,sleepCount=0,turnCount=0;
+const $=id=>document.getElementById(id);
+const video=$("video"),cameraBtn=$("camera"),testBtn=$("test"),startBtn=$("start"),pauseBtn=$("pause"),endBtn=$("end"),status=$("status"),camText=$("camText"),camDot=$("camDot"),focusEl=$("focus"),scoreEl=$("score"),awayEl=$("away"),sleepEl=$("sleep"),fill=$("fill"),log=$("log"),goal=$("goal"),engineText=$("engineText"),engine=$("engine");
+function engineState(t,on=false){engineText.textContent=t;engine.classList.toggle("on",on)}
+function statusSet(a,b){status.innerHTML="<b>"+a+"</b><span>"+b+"</span>"}
+function fmt(ms){let s=Math.floor(ms/1000),m=Math.floor(s/60);return String(m).padStart(2,"0")+":"+String(s%60).padStart(2,"0")}
+function event(a,b){const e=document.createElement("div");e.className="event";e.innerHTML="<b>"+a+"</b> · "+b+"<br><small>"+new Date().toLocaleTimeString("ko-KR")+"</small>";log.prepend(e)}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function ear(p,i){return(dist(p[i[1]],p[i[5]])+dist(p[i[2]],p[i[4]]))/(2*dist(p[i[0]],p[i[3]]))}
+function initAI(){
+ try{
+  if(!window.FaceMesh){engineState("AI 라이브러리 로딩 실패");statusSet("AI 오류","Face Mesh 라이브러리를 불러오지 못했습니다.");return}
+  faceMesh=new FaceMesh({locateFile:f=>"https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/"+f});
+  faceMesh.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:.5,minTrackingConfidence:.5});
+  faceMesh.onResults(results=>{
+   const now=performance.now(),p=results.multiFaceLandmarks?.[0];
+   if(p){
+    lastFace=now;awayLogged=false;
+    const e=(ear(p,[33,160,158,133,153,144])+ear(p,[362,385,387,263,373,380]))/2;
+    if(e<.19){if(!eyesClosedAt)eyesClosedAt=now;if(running&&!paused&&now-eyesClosedAt>1800&&!sleepLogged){sleepLogged=true;sleepCount++;sleepEl.textContent=sleepCount;event("졸음 의심","눈 감김 약 1.8초 지속");statusSet("졸음 의심","눈을 뜨고 자세를 바로잡아 주세요.")}}
+    else{eyesClosedAt=0;sleepLogged=false}
+    const le=p[33],re=p[263],nose=p[1],mid=(le.x+re.x)/2,y=Math.abs((nose.x-mid)/Math.max(.001,Math.abs(re.x-le.x)));
+    if(running&&!paused&&y>.27){if(!turnStarted)turnStarted=now;if(now-turnStarted>2500&&!turnLogged){turnLogged=true;turnCount++;event("시선 이탈 의심","얼굴 방향이 일정 시간 크게 벗어남");statusSet("시선 이탈 의심","다시 공부 목표를 바라보세요.")}}
+    else{turnStarted=0;turnLogged=false}
+    if(running&&!paused&&eyesClosedAt===0&&!turnLogged)statusSet("집중 중",goal.value.trim()||"현재 목표를 수행하세요.");
+   }else if(running&&!paused&&now-lastFace>3000&&!awayLogged){awayLogged=true;awayCount++;awayEl.textContent=awayCount;event("자리 이탈","얼굴이 약 3초 이상 감지되지 않음");statusSet("자리 이탈","카메라 앞 자리로 돌아오세요.")}
+  });
+  engineState("AI 준비 완료",true);
+  statusSet("AI 준비 완료","카메라를 켜면 실시간 감지가 시작됩니다.");
+  if(stream)monitor();
+ }catch(e){console.error(e);engineState("AI 초기화 실패");statusSet("AI 오류",(e.name||"Error")+" · "+(e.message||"초기화 실패"))}
+}
+async function monitor(){
+ cancelAnimationFrame(raf);
+ const loop=async()=>{
+  if(stream&&video.readyState>=2&&faceMesh){
+   try{await faceMesh.send({image:video})}catch(e){console.error(e)}
+  }
+  raf=requestAnimationFrame(loop);
+ };
+ loop();
+}
+async function startCamera(){
+ if(!navigator.mediaDevices?.getUserMedia){statusSet("카메라 사용 불가","현재 페이지가 HTTPS 보안 연결인지 확인하세요.");return}
+ try{
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"user"},width:{ideal:640},height:{ideal:480}},audio:false});
+  video.srcObject=stream;await video.play();camText.textContent="카메라 켜짐";camDot.style.background="var(--good)";cameraBtn.textContent="카메라 끄기";statusSet("카메라 켜짐",faceMesh?"얼굴 감지를 시작합니다.":"AI 준비 중입니다.");monitor();
+ }catch(e){console.error(e);statusSet("카메라 오류",(e.name||"Error")+" · "+(e.message||"권한을 확인하세요."))}
+}
 function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}cancelAnimationFrame(raf);camText.textContent="카메라 꺼짐";camDot.style.background="var(--muted)";cameraBtn.textContent="① 카메라 켜기"}
-function monitor(){cancelAnimationFrame(raf);const now=performance.now();if(video.readyState>=2&&landmarker&&now-lastFrame>130){lastFrame=now;const r=landmarker.detectForVideo(video,now),p=r.faceLandmarks?.[0];if(p){lastFace=now;awayLogged=false;const l=ear(p,[33,160,158,133,153,144]),rr=ear(p,[362,385,387,263,373,380]),e=(l+rr)/2;if(e<.19){if(!eyesClosed)eyesClosed=now;if(running&&!paused&&now-eyesClosed>1800&&!sleepLogged){sleepLogged=true;sleepCount++;sleepEl.textContent=sleepCount;logEvent("졸음 의심","눈 감김 약 1.8초 지속");setStatus("졸음 의심","눈을 뜨고 자세를 바로잡아 주세요.")}}else{eyesClosed=0;sleepLogged=false}const y=Math.abs(yawApprox(p));if(running&&!paused&&y>.27){if(!turnLogged){turnLogged=true;window.turnAt=now}if(now-window.turnAt>2500&&!window.turnRecorded){window.turnRecorded=true;turnCount++;logEvent("시선 이탈 의심","얼굴 방향이 일정 시간 크게 벗어남");setStatus("시선 이탈 의심","다시 공부 목표를 바라보세요.")}}else{turnLogged=false;window.turnRecorded=false}if(running&&!paused&&lastState!=="졸음 의심"&&lastState!=="시선 이탈 의심")setStatus("집중 중",goal.value.trim()||"현재 목표를 수행하세요.")}else{eyesClosed=0;sleepLogged=false;if(running&&!paused&&now-lastFace>3000&&!awayLogged){awayLogged=true;awayCount++;awayEl.textContent=awayCount;logEvent("자리 이탈","얼굴이 약 3초 이상 감지되지 않음");setStatus("자리 이탈","카메라 앞 자리로 돌아오세요.")}}}raf=requestAnimationFrame(monitor)}
-function focusLoop(now){if(!running||paused)return;if(lastFrame===0)lastFrame=now;const dt=Math.min(1000,now-(window.focusTick||now));window.focusTick=now;focusedMs+=dt;focusEl.textContent=fmt(focusedMs);const elapsed=Math.max(1,focusedMs),score=Math.max(0,Math.min(100,100-(nonFocusMs/elapsed*100)));scoreEl.textContent=Math.round(score)+"%";fill.style.width=Math.min(100,focusedMs/(25*60*1000)*100)+"%";requestAnimationFrame(focusLoop)}
+function focusLoop(now){if(!running||paused)return;if(!lastTick)lastTick=now;focusedMs+=Math.min(1000,now-lastTick);lastTick=now;focusEl.textContent=fmt(focusedMs);scoreEl.textContent="100%";fill.style.width=Math.min(100,focusedMs/1500000*100)+"%";requestAnimationFrame(focusLoop)}
 cameraBtn.onclick=()=>stream?stopCamera():startCamera();
-testBtn.onclick=()=>{if(stream&&landmarker)setStatus("감지 테스트","카메라와 얼굴을 확인하고 있습니다.");else setStatus("테스트 불가","먼저 카메라를 켜고 AI 준비 완료 상태인지 확인하세요.")};
-startBtn.onclick=()=>{if(!goal.value.trim()){goal.focus();setStatus("목표 필요","지금 할 공부 한 가지를 입력하세요.");return}if(!stream){setStatus("카메라 필요","자동 집중 측정을 사용하려면 카메라를 먼저 켜세요.");return}running=true;paused=false;focusedMs=0;nonFocusMs=0;window.focusTick=0;awayCount=0;sleepCount=0;turnCount=0;awayEl.textContent="0";sleepEl.textContent="0";scoreEl.textContent="100%";log.innerHTML="";setStatus("집중 중",goal.value.trim());requestAnimationFrame(focusLoop)};
-pauseBtn.onclick=()=>{if(!running)return;paused=!paused;pauseBtn.textContent=paused?"다시 시작":"일시정지";setStatus(paused?"일시정지":"집중 중",paused?"카메라 감지는 계속되지만 집중 시간에는 포함하지 않습니다.":goal.value.trim())};
-endBtn.onclick=()=>{running=false;paused=false;pauseBtn.textContent="일시정지";setStatus("세션 종료","집중 "+fmt(focusedMs)+" · 자동 이벤트 "+(awayCount+sleepCount+turnCount)+"회")};
-window.addEventListener("beforeunload",stopCamera);loadAI();
+testBtn.onclick=()=>stream?statusSet("감지 테스트","카메라와 얼굴을 확인하고 있습니다."):statusSet("테스트 불가","먼저 카메라를 켜세요.");
+startBtn.onclick=()=>{if(!goal.value.trim()){goal.focus();statusSet("목표 필요","지금 할 공부 한 가지를 입력하세요.");return}if(!stream){statusSet("카메라 필요","먼저 카메라를 켜세요.");return}running=true;paused=false;focusedMs=0;lastTick=0;awayCount=0;sleepCount=0;turnCount=0;awayEl.textContent="0";sleepEl.textContent="0";scoreEl.textContent="100%";log.innerHTML="";statusSet("집중 중",goal.value.trim());requestAnimationFrame(focusLoop)};
+pauseBtn.onclick=()=>{if(!running)return;paused=!paused;pauseBtn.textContent=paused?"다시 시작":"일시정지";statusSet(paused?"일시정지":"집중 중",paused?"카메라 감지는 계속됩니다.":goal.value.trim())};
+endBtn.onclick=()=>{running=false;paused=false;pauseBtn.textContent="일시정지";statusSet("세션 종료","집중 "+fmt(focusedMs)+" · 자동 이벤트 "+(awayCount+sleepCount+turnCount)+"회")};
+window.addEventListener("beforeunload",stopCamera);
+window.addEventListener("load",()=>{engineState("AI 라이브러리 로딩 중…");const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js";s.onload=initAI;s.onerror=()=>{engineState("AI 라이브러리 로딩 실패");statusSet("AI 오류","외부 AI 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하세요.")};document.head.appendChild(s)});
 </script>
 </body>
 </html>
