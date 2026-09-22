@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Focus Lock 2.0</title>
+<title>Focus Lock 2.1</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0f14;--panel:#141a22;--panel2:#10151c;--line:#27313d;--text:#f1f5f9;--muted:#9aa6b2;--accent:#7dd3fc;--good:#86efac;--warn:#fbbf24;--bad:#fb7185}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -24,7 +24,7 @@ input{width:100%;padding:13px;border:1px solid var(--line);border-radius:11px;ba
 <body>
 <main>
 <header class="top">
-  <div><h1>Focus Lock 2.0</h1><div class="sub">카메라 기반 집중 모니터 · 영상 저장 없음</div></div>
+  <div><h1>Focus Lock 2.1</h1><div class="sub">카메라 기반 집중 모니터 · 영상 저장 없음</div></div>
   <div class="engine" id="engine"><span class="dot"></span><span id="engineText">준비 확인 중</span></div>
 </header>
 <section class="card" style="margin-top:16px">
@@ -49,12 +49,12 @@ input{width:100%;padding:13px;border:1px solid var(--line);border-radius:11px;ba
   <div class="log" id="log"></div>
 </aside>
 </div>
-<section class="card setup" style="margin-top:14px"><b>자동 판정 기준</b><br>• <b>자리 이탈:</b> 얼굴이 약 3초 이상 감지되지 않으면 기록합니다.<br>• <b>졸음 의심:</b> 카메라를 켤 때 눈 크기를 보정한 뒤, <b>양쪽 눈이 확실하게 감긴 상태</b>가 약 1.8초 이상 지속될 때만 기록합니다.<br>• <b>고개 돌림:</b> 얼굴의 좌우 방향이 크게 바뀐 상태가 약 2.5초 지속되면 '시선 이탈 의심'으로 기록합니다.<br>• 짧은 깜빡임과 순간적인 움직임은 기록하지 않습니다. 카메라 각도·조명에 따라 오탐이 발생할 수 있습니다.</section>
+<section class="card setup" style="margin-top:14px"><b>자동 판정 기준</b><br>• <b>자리 이탈:</b> 얼굴이 약 2.5초 이상 감지되지 않으면 자동 일시정지하고, 돌아오면 약 0.9초 확인 후 자동 재개합니다.<br>• <b>졸음 의심:</b> 카메라를 켤 때 <b>개인별 눈 크기</b>를 보정한 뒤, 양쪽 눈이 기준보다 크게 닫힌 상태가 약 1.8초 지속될 때만 판정합니다. 판정 즉시 자동 일시정지합니다.<br>• <b>고개 돌림:</b> 얼굴 방향이 약 2.5초 크게 벗어나면 자동 일시정지하고, 정면으로 돌아오면 자동 재개합니다.<br>• 자동 일시정지 중에는 <b>순공시간이 증가하지 않습니다.</b> 짧은 깜빡임과 순간적인 움직임은 무시합니다.</section>
 <section class="card setup" id="errorBox" style="margin-top:14px"><b>실행 문제 해결</b><br>1. iPad라면 이 파일을 '파일 앱에서 직접 열기'보다 <b>웹페이지 주소(HTTPS)</b>로 여는 방식을 권장합니다.<br>2. 카메라 권한을 거부했다면 브라우저의 사이트 설정에서 카메라 권한을 허용하세요.<br>3. AI 엔진은 처음 한 번 모델을 내려받기 때문에 인터넷 연결이 필요합니다.<br>4. 이 페이지를 <b>HTTP가 아닌 HTTPS 또는 localhost</b>에서 실행해야 카메라 접근이 가능합니다.</section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.js" crossorigin="anonymous"></script>
 <script>
-let faceMesh=null,stream=null,raf=0,running=false,paused=false,focusedMs=0,lastTick=0,lastFace=0,eyesClosedAt=0,awayLogged=false,sleepLogged=false,turnStarted=0,turnLogged=false,awayCount=0,sleepCount=0,turnCount=0,selectedDeviceId="",eyeBaseline=0,eyeSamples=[],eyeCalibrated=false,eyeCalibrationStart=0;
+let faceMesh=null,stream=null,raf=0,running=false,paused=false,autoPaused=false,autoPauseReason="",autoResumeAt=0,focusedMs=0,lastTick=0,lastFace=0,eyesClosedAt=0,awayLogged=false,sleepLogged=false,turnStarted=0,turnLogged=false,awayCount=0,sleepCount=0,turnCount=0,selectedDeviceId="",eyeBaseline=0,eyeSamples=[],eyeCalibrated=false,eyeCalibrationStart=0;
 const $=id=>document.getElementById(id);
 const video=$("video"),cameraBtn=$("camera"),testBtn=$("test"),startBtn=$("start"),pauseBtn=$("pause"),endBtn=$("end"),status=$("status"),camText=$("camText"),camDot=$("camDot"),focusEl=$("focus"),scoreEl=$("score"),awayEl=$("away"),sleepEl=$("sleep"),fill=$("fill"),log=$("log"),goal=$("goal"),engineText=$("engineText"),engine=$("engine"),cameraSelect=$("cameraSelect"),refreshCamerasBtn=$("refreshCameras");
 function engineState(t,on=false){engineText.textContent=t;engine.classList.toggle("on",on)}
@@ -65,6 +65,22 @@ function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
 function ear(p,i){return(dist(p[i[1]],p[i[5]])+dist(p[i[2]],p[i[4]]))/(2*dist(p[i[0]],p[i[3]]))}
 function resetEyeCalibration(){eyeBaseline=0;eyeSamples=[];eyeCalibrated=false;eyeCalibrationStart=0;eyesClosedAt=0;sleepLogged=false}
 function median(a){const s=[...a].sort((x,y)=>x-y);return s.length?s[Math.floor(s.length/2)]:0}
+function autoPause(reason,label){
+ if(!running||paused||autoPaused)return;
+ autoPaused=true;autoPauseReason=reason;autoResumeAt=0;lastTick=0;
+ event("자동 일시정지",label+" · 순공시간 측정 중지");
+ statusSet("자동 일시정지",label+" 상태가 해제되면 자동으로 다시 시작합니다.");
+}
+function autoResume(){
+ if(!running||paused||!autoPaused)return;
+ autoPaused=false;autoPauseReason="";autoResumeAt=0;lastTick=performance.now();
+ statusSet("집중 중",goal.value.trim()||"현재 목표를 수행하세요.");
+}
+function maybeResume(now,canResume){
+ if(!autoPaused||!canResume)return;
+ if(!autoResumeAt)autoResumeAt=now;
+ if(now-autoResumeAt>=900)autoResume();
+}
 async function refreshCameras(){
  try{
   const devices=await navigator.mediaDevices.enumerateDevices();
@@ -92,30 +108,60 @@ function initAI(){
    if(p){
     lastFace=now;awayLogged=false;
     const leftEAR=ear(p,[33,160,158,133,153,144]),rightEAR=ear(p,[362,385,387,263,373,380]),e=(leftEAR+rightEAR)/2;
+    let clearlyClosed=false;
     if(!eyeCalibrated){
      if(!eyeCalibrationStart)eyeCalibrationStart=now;
-     if(e>.16&&leftEAR>.16&&rightEAR>.16)eyeSamples.push(e);
-     if(now-eyeCalibrationStart>1200&&eyeSamples.length>=12){
-      eyeBaseline=median(eyeSamples.slice(-40));eyeCalibrated=true;
-      statusSet("AI 준비 완료","눈 상태 보정 완료 · 확실한 눈 감김만 졸음으로 기록합니다.");
+     // 작은 눈도 배제되지 않도록 절대 EAR 하한을 낮게 잡고, 개인별 기준을 사용한다.
+     if(e>.08&&leftEAR>.08&&rightEAR>.08)eyeSamples.push(e);
+     if(now-eyeCalibrationStart>1500&&eyeSamples.length>=15){
+      eyeBaseline=median(eyeSamples.slice(-60));eyeCalibrated=true;
+      statusSet("AI 준비 완료","개인 눈 크기 보정 완료 · 아주 확실한 양쪽 눈 감김만 졸음으로 판정합니다.");
      }
     }else{
-     const closedThreshold=Math.min(.14,eyeBaseline*.62);
-     const clearlyClosed=leftEAR<closedThreshold&&rightEAR<closedThreshold;
+     // 개인 기준 대비 52% 이하 + 절대 EAR 0.105 이하일 때만 '완전 감김'으로 본다.
+     const closedThreshold=Math.min(.105,eyeBaseline*.48);
+     clearlyClosed=leftEAR<closedThreshold&&rightEAR<closedThreshold;
      if(clearlyClosed){
       if(!eyesClosedAt)eyesClosedAt=now;
-      if(running&&!paused&&now-eyesClosedAt>1800&&!sleepLogged){
+      if(running&&!paused&&!autoPaused&&now-eyesClosedAt>1800&&!sleepLogged){
        sleepLogged=true;sleepCount++;sleepEl.textContent=sleepCount;
        event("졸음 의심","양쪽 눈이 확실하게 약 1.8초 이상 감김");
-       statusSet("졸음 의심","눈을 뜨고 자세를 바로잡아 주세요.")
+       autoPause("sleep","졸음 의심 · 눈 감김");
       }
-     }else{eyesClosedAt=0;sleepLogged=false}
+     }else{
+      eyesClosedAt=0;sleepLogged=false;
+     }
     }
-    const le=p[33],re=p[263],nose=p[1],mid=(le.x+re.x)/2,y=Math.abs((nose.x-mid)/Math.max(.001,Math.abs(re.x-le.x)));
-    if(running&&!paused&&y>.27){if(!turnStarted)turnStarted=now;if(now-turnStarted>2500&&!turnLogged){turnLogged=true;turnCount++;event("시선 이탈 의심","얼굴 방향이 일정 시간 크게 벗어남");statusSet("시선 이탈 의심","다시 공부 목표를 바라보세요.")}}
-    else{turnStarted=0;turnLogged=false}
-    if(running&&!paused&&eyesClosedAt===0&&!turnLogged)statusSet("집중 중",goal.value.trim()||"현재 목표를 수행하세요.");
-   }else if(running&&!paused&&now-lastFace>3000&&!awayLogged){awayLogged=true;awayCount++;awayEl.textContent=awayCount;event("자리 이탈","얼굴이 약 3초 이상 감지되지 않음");statusSet("자리 이탈","카메라 앞 자리로 돌아오세요.")}
+
+    const le=p[33],re=p[263],nose=p[1],mid=(le.x+re.x)/2,
+          y=Math.abs((nose.x-mid)/Math.max(.001,Math.abs(re.x-le.x)));
+    const turned=y>.27;
+
+    if(running&&!paused&&!autoPaused&&turned){
+     if(!turnStarted)turnStarted=now;
+     if(now-turnStarted>2500&&!turnLogged){
+      turnLogged=true;turnCount++;
+      event("시선 이탈 의심","얼굴 방향이 일정 시간 크게 벗어남");
+      autoPause("turn","시선 이탈 의심 · 고개 돌림");
+     }
+    }else if(!turned){
+     turnStarted=0;turnLogged=false;
+    }
+
+    if(autoPaused){
+     const canResume=!clearlyClosed&&!turned;
+     maybeResume(now,canResume);
+    }else if(running&&!paused&&!clearlyClosed&&!turned){
+     statusSet("집중 중",goal.value.trim()||"현재 목표를 수행하세요.");
+    }
+   }else if(running&&!paused&&!autoPaused&&now-lastFace>2500&&!awayLogged){
+    awayLogged=true;awayCount++;awayEl.textContent=awayCount;
+    event("자리 이탈","얼굴이 약 2.5초 이상 감지되지 않음");
+    autoPause("away","자리 이탈 · 얼굴 미감지");
+   }else if(autoPaused&&autoPauseReason==="away"){
+    // 얼굴이 다시 잡히면 약 0.9초 안정적으로 확인한 뒤 자동 재개한다.
+    if(lastFace>0&&now-lastFace<250)maybeResume(now,true);
+   }
   });
   engineState("AI 준비 완료",true);
   statusSet("AI 준비 완료","카메라를 켜면 실시간 감지가 시작됩니다.");
@@ -155,9 +201,9 @@ cameraBtn.onclick=()=>stream?stopCamera():startCamera();
 cameraSelect.onchange=async()=>{selectedDeviceId=cameraSelect.value;if(stream){await startCamera()}else statusSet("카메라 선택됨",cameraSelect.options[cameraSelect.selectedIndex]?.textContent||"선택한 카메라를 사용합니다.")};
 refreshCamerasBtn.onclick=refreshCameras;
 testBtn.onclick=()=>stream?statusSet("감지 테스트","카메라와 얼굴을 확인하고 있습니다."):statusSet("테스트 불가","먼저 카메라를 켜세요.");
-startBtn.onclick=()=>{if(!goal.value.trim()){goal.focus();statusSet("목표 필요","지금 할 공부 한 가지를 입력하세요.");return}if(!stream){statusSet("카메라 필요","먼저 카메라를 켜세요.");return}running=true;paused=false;focusedMs=0;lastTick=0;awayCount=0;sleepCount=0;turnCount=0;awayEl.textContent="0";sleepEl.textContent="0";scoreEl.textContent="100%";log.innerHTML="";statusSet("집중 중",goal.value.trim());requestAnimationFrame(focusLoop)};
-pauseBtn.onclick=()=>{if(!running)return;paused=!paused;pauseBtn.textContent=paused?"다시 시작":"일시정지";statusSet(paused?"일시정지":"집중 중",paused?"카메라 감지는 계속됩니다.":goal.value.trim())};
-endBtn.onclick=()=>{running=false;paused=false;pauseBtn.textContent="일시정지";statusSet("세션 종료","집중 "+fmt(focusedMs)+" · 자동 이벤트 "+(awayCount+sleepCount+turnCount)+"회")};
+startBtn.onclick=()=>{if(!goal.value.trim()){goal.focus();statusSet("목표 필요","지금 할 공부 한 가지를 입력하세요.");return}if(!stream){statusSet("카메라 필요","먼저 카메라를 켜세요.");return}running=true;paused=false;autoPaused=false;autoPauseReason="";autoResumeAt=0;focusedMs=0;lastTick=0;awayCount=0;sleepCount=0;turnCount=0;awayLogged=false;sleepLogged=false;turnLogged=false;awayEl.textContent="0";sleepEl.textContent="0";scoreEl.textContent="100%";log.innerHTML="";statusSet("집중 중",goal.value.trim());requestAnimationFrame(focusLoop)};
+pauseBtn.onclick=()=>{if(!running)return;paused=!paused;if(paused){lastTick=0;pauseBtn.textContent="다시 시작";statusSet("일시정지","수동 일시정지 · 카메라 감지는 계속됩니다.")}else{autoPaused=false;autoPauseReason="";autoResumeAt=0;lastTick=performance.now();pauseBtn.textContent="일시정지";statusSet("집중 중",goal.value.trim())}};
+endBtn.onclick=()=>{running=false;paused=false;autoPaused=false;autoPauseReason="";autoResumeAt=0;pauseBtn.textContent="일시정지";statusSet("세션 종료","순공 "+fmt(focusedMs)+" · 자동 이벤트 "+(awayCount+sleepCount+turnCount)+"회")};
 window.addEventListener("beforeunload",stopCamera);
 window.addEventListener("load",()=>{engineState("AI 초기화 중…");try{if(typeof FaceMesh==="undefined")throw new Error("FaceMesh 라이브러리가 로드되지 않았습니다.");initAI();refreshCameras()}catch(e){console.error(e);engineState("AI 초기화 실패");statusSet("AI 오류",e.message)}});
 </script>
