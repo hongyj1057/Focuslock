@@ -196,7 +196,7 @@ async function startCamera(){
  }catch(e){console.error(e);statusSet("카메라 오류",(e.name||"Error")+" · "+(e.message||"권한을 확인하세요."))}
 }
 function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}cancelAnimationFrame(raf);resetEyeCalibration();camText.textContent="카메라 꺼짐";camDot.style.background="var(--muted)";cameraBtn.textContent="① 카메라 켜기"}
-function focusLoop(now){if(!running||paused)return;if(!lastTick)lastTick=now;focusedMs+=Math.min(1000,now-lastTick);lastTick=now;focusEl.textContent=fmt(focusedMs);scoreEl.textContent="100%";fill.style.width=Math.min(100,focusedMs/1500000*100)+"%";requestAnimationFrame(focusLoop)}
+function focusLoop(now){if(!running)return;if(paused||autoPaused){lastTick=0;requestAnimationFrame(focusLoop);return}if(!lastTick)lastTick=now;focusedMs+=Math.min(1000,now-lastTick);lastTick=now;focusEl.textContent=fmt(focusedMs);scoreEl.textContent="100%";fill.style.width=Math.min(100,focusedMs/1500000*100)+"%";requestAnimationFrame(focusLoop)}
 cameraBtn.onclick=()=>stream?stopCamera():startCamera();
 cameraSelect.onchange=async()=>{selectedDeviceId=cameraSelect.value;if(stream){await startCamera()}else statusSet("카메라 선택됨",cameraSelect.options[cameraSelect.selectedIndex]?.textContent||"선택한 카메라를 사용합니다.")};
 refreshCamerasBtn.onclick=refreshCameras;
