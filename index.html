@@ -52,6 +52,7 @@ input{width:100%;padding:13px;border:1px solid var(--line);border-radius:11px;ba
 <section class="card setup" style="margin-top:14px"><b>자동 판정 기준</b><br>• <b>자리 이탈:</b> 얼굴이 약 3초 이상 감지되지 않으면 기록합니다.<br>• <b>졸음 의심:</b> 양쪽 눈이 약 1.8초 이상 감긴 상태가 지속되면 기록합니다.<br>• <b>고개 돌림:</b> 얼굴의 좌우 방향이 크게 바뀐 상태가 약 2.5초 지속되면 '시선 이탈 의심'으로 기록합니다.<br>• 짧은 깜빡임과 순간적인 움직임은 기록하지 않습니다. 카메라 각도·조명에 따라 오탐이 발생할 수 있습니다.</section>
 <section class="card setup" id="errorBox" style="margin-top:14px"><b>실행 문제 해결</b><br>1. iPad라면 이 파일을 '파일 앱에서 직접 열기'보다 <b>웹페이지 주소(HTTPS)</b>로 여는 방식을 권장합니다.<br>2. 카메라 권한을 거부했다면 브라우저의 사이트 설정에서 카메라 권한을 허용하세요.<br>3. AI 엔진은 처음 한 번 모델을 내려받기 때문에 인터넷 연결이 필요합니다.<br>4. 이 페이지를 <b>HTTP가 아닌 HTTPS 또는 localhost</b>에서 실행해야 카메라 접근이 가능합니다.</section>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.js" crossorigin="anonymous"></script>
 <script>
 let faceMesh=null,stream=null,raf=0,running=false,paused=false,focusedMs=0,lastTick=0,lastFace=0,eyesClosedAt=0,awayLogged=false,sleepLogged=false,turnStarted=0,turnLogged=false,awayCount=0,sleepCount=0,turnCount=0;
 const $=id=>document.getElementById(id);
@@ -65,7 +66,7 @@ function ear(p,i){return(dist(p[i[1]],p[i[5]])+dist(p[i[2]],p[i[4]]))/(2*dist(p[
 function initAI(){
  try{
   if(!window.FaceMesh){engineState("AI 라이브러리 로딩 실패");statusSet("AI 오류","Face Mesh 라이브러리를 불러오지 못했습니다.");return}
-  faceMesh=new FaceMesh({locateFile:f=>"https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/"+f});
+  faceMesh=new FaceMesh({locateFile:f=>"https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/"+f});
   faceMesh.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:.5,minTrackingConfidence:.5});
   faceMesh.onResults(results=>{
    const now=performance.now(),p=results.multiFaceLandmarks?.[0];
@@ -110,7 +111,7 @@ startBtn.onclick=()=>{if(!goal.value.trim()){goal.focus();statusSet("목표 필�
 pauseBtn.onclick=()=>{if(!running)return;paused=!paused;pauseBtn.textContent=paused?"다시 시작":"일시정지";statusSet(paused?"일시정지":"집중 중",paused?"카메라 감지는 계속됩니다.":goal.value.trim())};
 endBtn.onclick=()=>{running=false;paused=false;pauseBtn.textContent="일시정지";statusSet("세션 종료","집중 "+fmt(focusedMs)+" · 자동 이벤트 "+(awayCount+sleepCount+turnCount)+"회")};
 window.addEventListener("beforeunload",stopCamera);
-window.addEventListener("load",()=>{engineState("AI 라이브러리 로딩 중…");const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js";s.onload=initAI;s.onerror=()=>{engineState("AI 라이브러리 로딩 실패");statusSet("AI 오류","외부 AI 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하세요.")};document.head.appendChild(s)});
+window.addEventListener("load",()=>{engineState("AI 초기화 중…");try{if(typeof FaceMesh==="undefined")throw new Error("FaceMesh 라이브러리가 로드되지 않았습니다.");initAI()}catch(e){console.error(e);engineState("AI 초기화 실패");statusSet("AI 오류",e.message)}});
 </script>
 </body>
 </html>
